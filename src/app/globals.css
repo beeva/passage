@@ -1,0 +1,23 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+::selection {
+  background-color: rgb(227 157 22 / 0.3);
+}
+
+.container-page {
+  @apply mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8;
+}
+
+.card-surface {
+  @apply border border-ink-700 bg-ink-900/60 shadow-panel;
+}
+
+.text-gradient {
+  @apply bg-gradient-to-r from-amber-400 to-amber-600 bg-clip-text text-transparent;
+}
+
+.scrollbar-thin {
+  scrollbar-width: thin;
+}
