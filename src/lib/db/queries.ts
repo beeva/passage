@@ -1,7 +1,8 @@
 import "server-only";
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "./client";
-import { users, workspaceMembers, workspaces } from "./schema";
+import { documentAccess, documents, passages, queries, users, workspaceMembers, workspaces } from "./schema";
+import type { DocumentStatus } from "./schema";
 
 export async function getUserByEmail(email: string) {
   const [user] = await db.select().from(users).where(eq(users.email, email)).limit(1);
@@ -28,6 +29,15 @@ export async function createWorkspace(slug: string, name: string) {
 export async function getWorkspaceBySlug(slug: string) {
   const [workspace] = await db.select().from(workspaces).where(eq(workspaces.slug, slug)).limit(1);
   return workspace ?? null;
+}
+
+/** null if either the workspace doesn't exist or the user isn't a member - callers treat both the same way (404, not a distinct 403), so a workspace's existence isn't leaked to someone who can't see it. */
+export async function getWorkspaceForMember(slug: string, userId: number) {
+  const workspace = await getWorkspaceBySlug(slug);
+  if (!workspace) return null;
+  const membership = await getMembership(workspace.id, userId);
+  if (!membership) return null;
+  return { workspace, membership };
 }
 
 export async function addWorkspaceMember(workspaceId: number, userId: number, role: "owner" | "member") {
@@ -60,4 +70,146 @@ export async function listWorkspaceMembers(workspaceId: number) {
     .from(workspaceMembers)
     .innerJoin(users, eq(workspaceMembers.userId, users.id))
     .where(eq(workspaceMembers.workspaceId, workspaceId));
+}
+
+export async function createDocument(input: {
+  workspaceId: number;
+  title: string;
+  sourceFilename: string;
+  contentType: string;
+  fileSizeBytes: number;
+  storageUrl: string;
+  uploadedByUserId: number;
+}) {
+  const [document] = await db.insert(documents).values({ ...input, status: "processing" }).returning();
+  if (!document) throw new Error("failed to create document");
+  return document;
+}
+
+export async function setDocumentStatus(documentId: number, status: DocumentStatus, errorMessage?: string) {
+  await db.update(documents).set({ status, errorMessage: errorMessage ?? null }).where(eq(documents.id, documentId));
+}
+
+export async function getDocumentById(documentId: number) {
+  const [document] = await db.select().from(documents).where(eq(documents.id, documentId)).limit(1);
+  return document ?? null;
+}
+
+export async function getDocumentByStorageUrl(storageUrl: string) {
+  const [document] = await db.select().from(documents).where(eq(documents.storageUrl, storageUrl)).limit(1);
+  return document ?? null;
+}
+
+export async function listDocumentsForWorkspace(workspaceId: number) {
+  return db.select().from(documents).where(eq(documents.workspaceId, workspaceId)).orderBy(documents.createdAt);
+}
+
+export async function deleteDocument(documentId: number) {
+  const [deleted] = await db.delete(documents).where(eq(documents.id, documentId)).returning({ storageUrl: documents.storageUrl });
+  return deleted ?? null;
+}
+
+export async function setDocumentAccess(documentId: number, userIds: number[]) {
+  await db.delete(documentAccess).where(eq(documentAccess.documentId, documentId));
+  if (userIds.length > 0) {
+    await db.insert(documentAccess).values(userIds.map((userId) => ({ documentId, userId })));
+  }
+}
+
+export async function listDocumentAccessUserIds(documentId: number): Promise<number[]> {
+  const rows = await db.select({ userId: documentAccess.userId }).from(documentAccess).where(eq(documentAccess.documentId, documentId));
+  return rows.map((r) => r.userId);
+}
+
+/**
+ * Two gates, both required: the user must be a member of the document's
+ * own workspace at all (a document id from workspace A means nothing to
+ * a member of workspace B, guessed or not), and if the document is
+ * further restricted (document_access has rows), the user must be on
+ * that allowlist. A document with no document_access rows is visible to
+ * every workspace member - the default, not an edge case. This is the
+ * single source of truth for "can this user see this document," used by
+ * both the document-serving route and the passage retrieval that backs
+ * every query, so a restricted document can never leak through either
+ * path.
+ */
+export async function canUserAccessDocument(userId: number, documentId: number): Promise<boolean> {
+  const document = await getDocumentById(documentId);
+  if (!document) return false;
+
+  const membership = await getMembership(document.workspaceId, userId);
+  if (!membership) return false;
+
+  const restrictedTo = await listDocumentAccessUserIds(documentId);
+  if (restrictedTo.length === 0) return true;
+  return restrictedTo.includes(userId);
+}
+
+export async function insertPassages(
+  documentId: number,
+  workspaceId: number,
+  chunks: { text: string; charStart: number; charEnd: number; ordinal: number }[]
+) {
+  if (chunks.length === 0) return;
+  await db.insert(passages).values(chunks.map((c) => ({ documentId, workspaceId, ...c })));
+}
+
+export async function getPassageById(passageId: number) {
+  const [passage] = await db.select().from(passages).where(eq(passages.id, passageId)).limit(1);
+  return passage ?? null;
+}
+
+/**
+ * Every document a user is allowed to see, in one workspace: readable
+ * (status "ready" - a still-processing or failed upload has no usable
+ * passages yet) and either workspace-wide-visible or explicitly
+ * allowlisted for this user. Computed as a set difference (all ready
+ * docs, minus the ones restricted away from this user) rather than a
+ * single join, since "a document with no access rows is visible to
+ * everyone" doesn't translate cleanly into one SQL predicate without a
+ * NOT EXISTS subquery per document - this is the same logic, just done
+ * as three simple queries.
+ */
+export async function listVisibleDocumentIds(workspaceId: number, userId: number): Promise<number[]> {
+  const readyDocs = await db
+    .select({ id: documents.id })
+    .from(documents)
+    .where(and(eq(documents.workspaceId, workspaceId), eq(documents.status, "ready")));
+  const docIds = readyDocs.map((d) => d.id);
+  if (docIds.length === 0) return [];
+
+  const restrictedRows = await db.select({ documentId: documentAccess.documentId }).from(documentAccess).where(inArray(documentAccess.documentId, docIds));
+  const restrictedDocIds = new Set(restrictedRows.map((r) => r.documentId));
+
+  const allowedRows = await db
+    .select({ documentId: documentAccess.documentId })
+    .from(documentAccess)
+    .where(and(inArray(documentAccess.documentId, docIds), eq(documentAccess.userId, userId)));
+  const allowedDocIds = new Set(allowedRows.map((r) => r.documentId));
+
+  return docIds.filter((id) => !restrictedDocIds.has(id) || allowedDocIds.has(id));
+}
+
+/** Every passage this user is allowed to see in this workspace - what a query's retrieval actually searches over. */
+export async function listVisiblePassagesForWorkspace(workspaceId: number, userId: number) {
+  const visibleDocIds = await listVisibleDocumentIds(workspaceId, userId);
+  if (visibleDocIds.length === 0) return [];
+  return db.select().from(passages).where(inArray(passages.documentId, visibleDocIds));
+}
+
+export async function logQuery(input: {
+  workspaceId: number;
+  userId: number;
+  questionText: string;
+  answeredPassageId: number | null;
+  confidence: number;
+  refused: boolean;
+}) {
+  const [query] = await db.insert(queries).values(input).returning();
+  if (!query) throw new Error("failed to log query");
+  return query;
+}
+
+export async function listQueriesForWorkspace(workspaceId: number, limit = 50) {
+  return db.select().from(queries).where(eq(queries.workspaceId, workspaceId)).orderBy(desc(queries.createdAt)).limit(limit);
 }
