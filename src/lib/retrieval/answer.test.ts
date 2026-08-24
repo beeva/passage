@@ -37,4 +37,21 @@ describe("selectAnswer", () => {
     expect(result.refused).toBe(false);
     if (!result.refused) expect(result.passageId).toBe(3);
   });
+
+  it("still answers a clearly matching question against a single-passage corpus - a brand new workspace's first document", () => {
+    // The exact scenario an unsmoothed TF-IDF IDF breaks: with only one
+    // passage in the whole corpus, every one of its terms technically
+    // "appears in every document," which collapses plain ln(N/df) to
+    // exactly 0 and makes cosine similarity 0 no matter what's asked.
+    // Found live against a real freshly created workspace with one real
+    // uploaded document - every single query refused, regardless of how
+    // well it actually matched.
+    const onePassage = [{ id: 1, text: "Annual salary reviews happen every January, with merit increases of two to six percent." }];
+    const result = selectAnswer(onePassage, "When do salary reviews happen?");
+    expect(result.refused).toBe(false);
+    if (!result.refused) {
+      expect(result.passageId).toBe(1);
+      expect(result.confidence).toBeGreaterThan(0);
+    }
+  });
 });

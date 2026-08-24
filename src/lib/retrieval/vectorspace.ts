@@ -41,11 +41,21 @@ export function buildVectorSpaceIndex(documents: VSDocument[]): VectorSpaceIndex
     for (const term of doc.counts.keys()) documentFrequency.set(term, (documentFrequency.get(term) ?? 0) + 1);
   }
 
-  // Plain ln(N/df) - every term here appears in at least one document by
-  // construction (it came from documentFrequency's own keys), so df is
-  // always >= 1 and this never divides by zero.
+  // Smoothed IDF (ln((1+N)/(1+df)) + 1, the same smoothing scikit-learn's
+  // TfidfVectorizer uses by default) rather than the textbook ln(N/df) -
+  // the plain formula collapses to EXACTLY 0 for every term whenever a
+  // term appears in every document, which is guaranteed for every term
+  // when the corpus has exactly one document in it. That's not a rare
+  // edge case here - it's every brand-new workspace's first upload.
+  // Found live: a real, correctly-extracted, correctly-chunked document
+  // whose own workspace had nothing else indexed yet always came back
+  // refused, at any confidence threshold, because cosine similarity
+  // against an all-zero vector is 0 no matter how well the terms match.
+  // The smoothed version never reaches 0, so it can't fully erase the
+  // signal - it still ranks a document-unique term above a
+  // every-document term, just without the degenerate floor.
   const idf = new Map<string, number>();
-  for (const [term, df] of documentFrequency) idf.set(term, Math.log(totalDocuments / df));
+  for (const [term, df] of documentFrequency) idf.set(term, Math.log((1 + totalDocuments) / (1 + df)) + 1);
 
   const vectors = termCountsByDoc.map((doc) => {
     const raw = new Map<string, number>();
