@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { getSession } from "@/lib/auth/session";
-import { getWorkspaceForMember, listDocumentsForWorkspace } from "@/lib/db/queries";
+import { getWorkspaceForMember, listDocumentsForWorkspace, listWorkspaceMembers } from "@/lib/db/queries";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatBytes, formatDate } from "@/lib/utils";
@@ -8,6 +8,8 @@ import type { DocumentStatus } from "@/lib/db/schema";
 import { DocumentUploadForm } from "./document-upload-form";
 import { AskQuestionForm } from "./ask-question-form";
 import { DeleteDocumentButton } from "./delete-document-button";
+import { MembersCard } from "./members-card";
+import { DocumentAccessControl } from "./document-access-control";
 
 const STATUS_TONE: Record<DocumentStatus, "good" | "warning" | "critical"> = {
   ready: "good",
@@ -28,7 +30,10 @@ export default async function WorkspacePage({ params }: { params: Promise<{ slug
   const resolved = await getWorkspaceForMember(slug, session.userId);
   if (!resolved) notFound();
 
-  const documents = await listDocumentsForWorkspace(resolved.workspace.id);
+  const [documents, members] = await Promise.all([
+    listDocumentsForWorkspace(resolved.workspace.id),
+    listWorkspaceMembers(resolved.workspace.id),
+  ]);
 
   return (
     <main className="container-page flex flex-col gap-8 py-16">
@@ -42,6 +47,8 @@ export default async function WorkspacePage({ params }: { params: Promise<{ slug
           <AskQuestionForm slug={slug} />
         </CardContent>
       </Card>
+
+      <MembersCard slug={slug} members={members} isOwner={resolved.membership.role === "owner"} />
 
       <Card>
         <CardHeader>
@@ -84,7 +91,12 @@ export default async function WorkspacePage({ params }: { params: Promise<{ slug
                       </td>
                       <td className="py-2 pr-4 text-xs text-ink-400">{formatDate(document.createdAt)}</td>
                       <td className="py-2">
-                        <DeleteDocumentButton slug={slug} documentId={document.id} title={document.title} />
+                        <div className="flex items-start gap-2">
+                          {resolved.membership.role === "owner" ? (
+                            <DocumentAccessControl slug={slug} documentId={document.id} members={members} />
+                          ) : null}
+                          <DeleteDocumentButton slug={slug} documentId={document.id} title={document.title} />
+                        </div>
                       </td>
                     </tr>
                   ))}
