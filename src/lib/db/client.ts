@@ -1,4 +1,9 @@
-import "server-only";
+// No "server-only" guard here: this module is also imported directly by
+// standalone scripts (scripts/evals.ts, and future seed/migration-style
+// scripts) run through tsx, outside of Next's build pipeline where that
+// guard is enforced - it throws even in a genuine server-only context run
+// that way. node:postgres already makes this unbundlable for the browser
+// regardless, which is the guard's actual purpose here.
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as schema from "./schema";
