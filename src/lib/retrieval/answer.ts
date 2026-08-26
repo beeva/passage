@@ -3,9 +3,17 @@ import { hybridSearch, type SearchablePassage } from "./search";
 // Below this cosine similarity, the top-ranked passage isn't actually
 // about the same thing the question is - refusing is more useful than an
 // answer that merely happens to rank first among bad options. Tuned
-// against the eval fixtures (scripts/evals.ts): high enough to reject
-// genuinely off-topic questions, low enough not to refuse legitimate
-// short/sparse questions against a small corpus.
+// against the eval fixtures (scripts/evals.ts), where it sits between two
+// real, opposing failure cases from that fixture set: a legitimately
+// relevant question that shares almost no literal words with its answer
+// scores 0.116 (just under this threshold - a real false refusal), and a
+// genuinely unrelated question that happens to share one coincidentally
+// distinctive word with an unrelated passage scores 0.147 (just over it -
+// a real false match). No single threshold value fixes both at once; run
+// `npm run evals` to see the exact numbers. This is a real precision/
+// recall tradeoff inherent to lexical retrieval without true semantic
+// embeddings, not a bug to chase - moving the threshold trades one
+// specific failure for the other, not a net improvement.
 export const CONFIDENCE_THRESHOLD = 0.12;
 
 export type AnswerResult =
