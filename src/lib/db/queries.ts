@@ -31,6 +31,15 @@ export async function getWorkspaceBySlug(slug: string) {
   return workspace ?? null;
 }
 
+export async function getWorkspaceBySlackTeamId(slackTeamId: string) {
+  const [workspace] = await db.select().from(workspaces).where(eq(workspaces.slackTeamId, slackTeamId)).limit(1);
+  return workspace ?? null;
+}
+
+export async function setWorkspaceSlackTeamId(workspaceId: number, slackTeamId: string | null) {
+  await db.update(workspaces).set({ slackTeamId }).where(eq(workspaces.id, workspaceId));
+}
+
 /** null if either the workspace doesn't exist or the user isn't a member - callers treat both the same way (404, not a distinct 403), so a workspace's existence isn't leaked to someone who can't see it. */
 export async function getWorkspaceForMember(slug: string, userId: number) {
   const workspace = await getWorkspaceBySlug(slug);
@@ -197,9 +206,34 @@ export async function listVisiblePassagesForWorkspace(workspaceId: number, userI
   return db.select().from(passages).where(inArray(passages.documentId, visibleDocIds));
 }
 
+/**
+ * The Slack slash command path has no Passage user behind it - Slack
+ * only proves which team and channel a request came from, not which
+ * individual Passage account (there's no OAuth identity-linking flow
+ * here) - so it can only ever search documents that are visible to the
+ * whole workspace, never anything restricted to a specific allowlist.
+ * That's a real, narrower corpus than a signed-in user gets, not a
+ * shortcut around the permission model.
+ */
+export async function listUnrestrictedPassagesForWorkspace(workspaceId: number) {
+  const readyDocs = await db
+    .select({ id: documents.id })
+    .from(documents)
+    .where(and(eq(documents.workspaceId, workspaceId), eq(documents.status, "ready")));
+  const docIds = readyDocs.map((d) => d.id);
+  if (docIds.length === 0) return [];
+
+  const restrictedRows = await db.select({ documentId: documentAccess.documentId }).from(documentAccess).where(inArray(documentAccess.documentId, docIds));
+  const restrictedDocIds = new Set(restrictedRows.map((r) => r.documentId));
+
+  const unrestrictedDocIds = docIds.filter((id) => !restrictedDocIds.has(id));
+  if (unrestrictedDocIds.length === 0) return [];
+  return db.select().from(passages).where(inArray(passages.documentId, unrestrictedDocIds));
+}
+
 export async function logQuery(input: {
   workspaceId: number;
-  userId: number;
+  userId: number | null;
   questionText: string;
   answeredPassageId: number | null;
   confidence: number;

@@ -13,6 +13,11 @@ export const workspaces = pgTable("workspaces", {
   id: serial("id").primaryKey(),
   slug: text("slug").notNull().unique(),
   name: text("name").notNull(),
+  // Null until an owner connects a Slack workspace to this one. A single
+  // Passage workspace can be connected to at most one Slack team - the
+  // unique constraint is what makes a slash command's team_id resolve to
+  // exactly one Passage workspace, not an ambiguous set.
+  slackTeamId: text("slack_team_id").unique(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -122,9 +127,11 @@ export const queries = pgTable(
     workspaceId: integer("workspace_id")
       .notNull()
       .references(() => workspaces.id, { onDelete: "cascade" }),
-    userId: integer("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+    // Null for a query with no real Passage account behind it - a Slack
+    // slash command, which only proves which Slack team/channel asked,
+    // not which individual Passage user (see the comment on
+    // listUnrestrictedPassagesForWorkspace).
+    userId: integer("user_id").references(() => users.id, { onDelete: "set null" }),
     questionText: text("question_text").notNull(),
     answeredPassageId: integer("answered_passage_id").references(() => passages.id, { onDelete: "set null" }),
     confidence: doublePrecision("confidence").notNull(),
