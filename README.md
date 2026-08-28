@@ -73,7 +73,9 @@ being real:
 - [x] Fixture-based citation-accuracy eval harness (`npm run evals`) - 84.6% against 13 real
       fixtures, a genuine precision/recall tradeoff (see the comment on `CONFIDENCE_THRESHOLD`),
       not a number massaged to look clean
-- [ ] Slack app - real request-signature verification, slash command
+- [x] Slack app - real request-signature verification (HMAC-SHA256, timing-safe, replay-window
+      checked), a slash command answered with the real retrieval pipeline, scoped to
+      workspace-wide-visible documents only (no per-user identity from a slash command)
 - [ ] REST API docs page, health check
 - [ ] Adversarial review pass
 
