@@ -76,7 +76,7 @@ being real:
 - [x] Slack app - real request-signature verification (HMAC-SHA256, timing-safe, replay-window
       checked), a slash command answered with the real retrieval pipeline, scoped to
       workspace-wide-visible documents only (no per-user identity from a slash command)
-- [ ] REST API docs page, health check
+- [x] REST API docs page, health check (real DB round-trip, not just "the process is up")
 - [ ] Adversarial review pass
 
 ## License
