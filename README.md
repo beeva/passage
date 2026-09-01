@@ -57,6 +57,29 @@ being real:
 - Uploaded documents are served through a real, auth-checked route
   (`src/app/uploads/[filename]`), not Next's static `/public` handling
 
+## Getting started
+
+```bash
+npm install
+cp .env.example .env
+npm run db:up && npm run db:migrate && npm run db:seed
+npm run dev
+```
+
+`npm run db:seed` creates a demo account (`demo@passage.local` / `demo-password-1234`) in
+a `demo` workspace. `npm run evals` runs the citation-accuracy eval harness against its own
+seeded `evals` workspace, independent of `demo`.
+
+## Testing
+
+```bash
+npm run test        # unit + integration tests (Vitest) - the retrieval math is hand-verified
+                     # against manually-computed expected scores, not just "it runs"
+npm run typecheck
+npm run lint
+npm run evals        # fixture-based citation-accuracy report, gated at 80% (requires a seeded DB)
+```
+
 ## Roadmap
 
 - [x] Domain schema (users, workspaces, membership, documents, passages, access, queries)
