@@ -100,7 +100,10 @@ npm run evals        # fixture-based citation-accuracy report, gated at 80% (req
       checked), a slash command answered with the real retrieval pipeline, scoped to
       workspace-wide-visible documents only (no per-user identity from a slash command)
 - [x] REST API docs page, health check (real DB round-trip, not just "the process is up")
-- [ ] Adversarial review pass
+- [x] Adversarial review pass - found and fixed a broken access-control gap on document
+      deletion, a metadata leak in the document listing, a missing rate limit and
+      unbounded-decompression risk on upload, and a couple of lower-severity gaps - see
+      [SECURITY.md](./SECURITY.md)
 
 ## License
 

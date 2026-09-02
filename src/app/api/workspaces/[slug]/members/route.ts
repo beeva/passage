@@ -2,9 +2,13 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { addWorkspaceMember, getMembership, getUserByEmail, getWorkspaceForMember, listWorkspaceMembers } from "@/lib/db/queries";
 import { getSession } from "@/lib/auth/session";
+import { rateLimit } from "@/lib/rate-limit";
 import { withErrorHandling } from "@/lib/api-error-handler";
 
 export const runtime = "nodejs";
+
+const ADD_MEMBER_RATE_LIMIT = 20;
+const ADD_MEMBER_RATE_WINDOW_MS = 60 * 60_000;
 
 export const GET = withErrorHandling(async (_request: Request, { params }: { params: Promise<{ slug: string }> }) => {
   const session = await getSession();
@@ -35,6 +39,9 @@ export const POST = withErrorHandling(async (request: Request, { params }: { par
   if (resolved.membership.role !== "owner") {
     return NextResponse.json({ error: "only a workspace owner can add members" }, { status: 403 });
   }
+
+  const limitResult = rateLimit(`add-member:${session.userId}`, ADD_MEMBER_RATE_LIMIT, ADD_MEMBER_RATE_WINDOW_MS);
+  if (!limitResult.allowed) return NextResponse.json({ error: "too many requests, try again later" }, { status: 429 });
 
   let raw: unknown;
   try {

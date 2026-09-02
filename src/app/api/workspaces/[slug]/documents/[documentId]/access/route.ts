@@ -40,6 +40,9 @@ export const GET = withErrorHandling(
     const { slug, documentId } = await params;
     const result = await resolveDocument(slug, documentId, session.userId);
     if ("error" in result) return result.error;
+    if (result.resolved.membership.role !== "owner") {
+      return NextResponse.json({ error: "only a workspace owner can view document access" }, { status: 403 });
+    }
 
     const userIds = await listDocumentAccessUserIds(result.document.id);
     return NextResponse.json({ restricted: userIds.length > 0, userIds });

@@ -73,7 +73,25 @@ async function seedEvalWorkspace(): Promise<{ workspaceId: number }> {
   return { workspaceId: workspace.id };
 }
 
+/**
+ * A real, if blunt, guard against the failure mode found in review: this
+ * script inserts and deletes real rows against whatever DATABASE_URL is
+ * currently loaded, with no awareness of what that database actually is.
+ * Run against a shared staging/production database, it would silently
+ * create a permanent "evals" workspace and a real evals@passage.local
+ * account. NODE_ENV=production is the one signal available here that's
+ * actually reliable across every real deploy target - not perfect (a
+ * misconfigured environment could still slip through), but it closes the
+ * common case of someone running `npm run evals` against a wrong env.
+ */
+function assertNotProduction() {
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("refusing to run the eval harness with NODE_ENV=production - it seeds and deletes real rows");
+  }
+}
+
 async function main() {
+  assertNotProduction();
   const { workspaceId } = await seedEvalWorkspace();
 
   const allPassages = await db.select().from(passages).where(eq(passages.workspaceId, workspaceId));
