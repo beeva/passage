@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { getSession } from "@/lib/auth/session";
-import { getWorkspaceForMember, listDocumentsForWorkspace, listWorkspaceMembers } from "@/lib/db/queries";
+import { getWorkspaceForMember, listVisibleDocumentsForWorkspace, listWorkspaceMembers } from "@/lib/db/queries";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatBytes, formatDate } from "@/lib/utils";
@@ -31,7 +31,7 @@ export default async function WorkspacePage({ params }: { params: Promise<{ slug
   if (!resolved) notFound();
 
   const [documents, members] = await Promise.all([
-    listDocumentsForWorkspace(resolved.workspace.id),
+    listVisibleDocumentsForWorkspace(resolved.workspace.id, session.userId),
     listWorkspaceMembers(resolved.workspace.id),
   ]);
 
@@ -93,9 +93,11 @@ export default async function WorkspacePage({ params }: { params: Promise<{ slug
                       <td className="py-2">
                         <div className="flex items-start gap-2">
                           {resolved.membership.role === "owner" ? (
-                            <DocumentAccessControl slug={slug} documentId={document.id} members={members} />
+                            <>
+                              <DocumentAccessControl slug={slug} documentId={document.id} members={members} />
+                              <DeleteDocumentButton slug={slug} documentId={document.id} title={document.title} />
+                            </>
                           ) : null}
-                          <DeleteDocumentButton slug={slug} documentId={document.id} title={document.title} />
                         </div>
                       </td>
                     </tr>

@@ -14,6 +14,9 @@ export const DELETE = withErrorHandling(
     const { slug, documentId } = await params;
     const resolved = await getWorkspaceForMember(slug, session.userId);
     if (!resolved) return NextResponse.json({ error: "workspace not found" }, { status: 404 });
+    if (resolved.membership.role !== "owner") {
+      return NextResponse.json({ error: "only a workspace owner can delete a document" }, { status: 403 });
+    }
 
     const id = Number(documentId);
     if (!Number.isInteger(id)) return NextResponse.json({ error: "invalid document id" }, { status: 400 });
