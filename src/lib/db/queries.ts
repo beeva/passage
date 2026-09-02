@@ -179,24 +179,27 @@ export async function getPassageById(passageId: number) {
  * NOT EXISTS subquery per document - this is the same logic, just done
  * as three simple queries.
  */
-export async function listVisibleDocumentIds(workspaceId: number, userId: number): Promise<number[]> {
-  const readyDocs = await db
-    .select({ id: documents.id })
-    .from(documents)
-    .where(and(eq(documents.workspaceId, workspaceId), eq(documents.status, "ready")));
-  const docIds = readyDocs.map((d) => d.id);
-  if (docIds.length === 0) return [];
+async function filterVisibleDocumentIds(candidateDocIds: number[], userId: number): Promise<number[]> {
+  if (candidateDocIds.length === 0) return [];
 
-  const restrictedRows = await db.select({ documentId: documentAccess.documentId }).from(documentAccess).where(inArray(documentAccess.documentId, docIds));
+  const restrictedRows = await db.select({ documentId: documentAccess.documentId }).from(documentAccess).where(inArray(documentAccess.documentId, candidateDocIds));
   const restrictedDocIds = new Set(restrictedRows.map((r) => r.documentId));
 
   const allowedRows = await db
     .select({ documentId: documentAccess.documentId })
     .from(documentAccess)
-    .where(and(inArray(documentAccess.documentId, docIds), eq(documentAccess.userId, userId)));
+    .where(and(inArray(documentAccess.documentId, candidateDocIds), eq(documentAccess.userId, userId)));
   const allowedDocIds = new Set(allowedRows.map((r) => r.documentId));
 
-  return docIds.filter((id) => !restrictedDocIds.has(id) || allowedDocIds.has(id));
+  return candidateDocIds.filter((id) => !restrictedDocIds.has(id) || allowedDocIds.has(id));
+}
+
+export async function listVisibleDocumentIds(workspaceId: number, userId: number): Promise<number[]> {
+  const readyDocs = await db
+    .select({ id: documents.id })
+    .from(documents)
+    .where(and(eq(documents.workspaceId, workspaceId), eq(documents.status, "ready")));
+  return filterVisibleDocumentIds(readyDocs.map((d) => d.id), userId);
 }
 
 /** Every passage this user is allowed to see in this workspace - what a query's retrieval actually searches over. */
@@ -204,6 +207,22 @@ export async function listVisiblePassagesForWorkspace(workspaceId: number, userI
   const visibleDocIds = await listVisibleDocumentIds(workspaceId, userId);
   if (visibleDocIds.length === 0) return [];
   return db.select().from(passages).where(inArray(passages.documentId, visibleDocIds));
+}
+
+/**
+ * The permission-aware counterpart to listDocumentsForWorkspace - every
+ * status (processing/ready/failed), not just "ready" (listVisibleDocumentIds
+ * deliberately excludes non-ready documents, since only a ready document
+ * has passages worth searching, but a user still needs to see their own
+ * in-progress or failed uploads listed). A restricted document is
+ * invisible here exactly the same way it's invisible to retrieval and the
+ * file-serving route - title, size, and status were leaking through the
+ * unfiltered listing before this existed.
+ */
+export async function listVisibleDocumentsForWorkspace(workspaceId: number, userId: number) {
+  const allDocs = await db.select().from(documents).where(eq(documents.workspaceId, workspaceId)).orderBy(documents.createdAt);
+  const visibleIds = new Set(await filterVisibleDocumentIds(allDocs.map((d) => d.id), userId));
+  return allDocs.filter((d) => visibleIds.has(d.id));
 }
 
 /**
