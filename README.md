@@ -104,6 +104,8 @@ npm run evals        # fixture-based citation-accuracy report, gated at 80% (req
       deletion, a metadata leak in the document listing, a missing rate limit and
       unbounded-decompression risk on upload, and a couple of lower-severity gaps - see
       [SECURITY.md](./SECURITY.md)
+- [x] Activity log - every question asked, cited or refused, with who asked (or "via Slack")
+      and the real confidence score, not a sample
 
 ## License
 
