@@ -263,6 +263,20 @@ export async function logQuery(input: {
   return query;
 }
 
+/** A left join, not inner - queries.userId is null for a Slack-originated question (no Passage account behind it), and those rows still belong in the activity log. */
 export async function listQueriesForWorkspace(workspaceId: number, limit = 50) {
-  return db.select().from(queries).where(eq(queries.workspaceId, workspaceId)).orderBy(desc(queries.createdAt)).limit(limit);
+  return db
+    .select({
+      id: queries.id,
+      questionText: queries.questionText,
+      confidence: queries.confidence,
+      refused: queries.refused,
+      createdAt: queries.createdAt,
+      askedByEmail: users.email,
+    })
+    .from(queries)
+    .leftJoin(users, eq(queries.userId, users.id))
+    .where(eq(queries.workspaceId, workspaceId))
+    .orderBy(desc(queries.createdAt))
+    .limit(limit);
 }

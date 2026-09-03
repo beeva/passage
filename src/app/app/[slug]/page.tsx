@@ -1,9 +1,9 @@
 import { notFound, redirect } from "next/navigation";
 import { getSession } from "@/lib/auth/session";
-import { getWorkspaceForMember, listVisibleDocumentsForWorkspace, listWorkspaceMembers } from "@/lib/db/queries";
+import { getWorkspaceForMember, listQueriesForWorkspace, listVisibleDocumentsForWorkspace, listWorkspaceMembers } from "@/lib/db/queries";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatBytes, formatDate } from "@/lib/utils";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { formatBytes, formatDate, formatRelativeTime } from "@/lib/utils";
 import type { DocumentStatus } from "@/lib/db/schema";
 import { DocumentUploadForm } from "./document-upload-form";
 import { AskQuestionForm } from "./ask-question-form";
@@ -30,9 +30,10 @@ export default async function WorkspacePage({ params }: { params: Promise<{ slug
   const resolved = await getWorkspaceForMember(slug, session.userId);
   if (!resolved) notFound();
 
-  const [documents, members] = await Promise.all([
+  const [documents, members, recentQueries] = await Promise.all([
     listVisibleDocumentsForWorkspace(resolved.workspace.id, session.userId),
     listWorkspaceMembers(resolved.workspace.id),
+    listQueriesForWorkspace(resolved.workspace.id, 20),
   ]);
 
   return (
@@ -45,6 +46,34 @@ export default async function WorkspacePage({ params }: { params: Promise<{ slug
         </CardHeader>
         <CardContent>
           <AskQuestionForm slug={slug} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Activity</CardTitle>
+          <CardDescription>Every question asked in this workspace, cited or refused - not a sample, the real log.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {recentQueries.length === 0 ? (
+            <p className="text-sm text-ink-500">No questions asked yet.</p>
+          ) : (
+            <ul className="flex flex-col gap-2">
+              {recentQueries.map((query) => (
+                <li key={query.id} className="flex items-start justify-between gap-3 text-sm">
+                  <div className="flex flex-col">
+                    <span className="text-ink-200">{query.questionText}</span>
+                    <span className="text-xs text-ink-500">
+                      {query.askedByEmail ?? "via Slack"} · {formatRelativeTime(query.createdAt)}
+                    </span>
+                  </div>
+                  <Badge tone={query.refused ? "warning" : "cited"}>
+                    {query.refused ? "refused" : `${Math.round(query.confidence * 100)}%`}
+                  </Badge>
+                </li>
+              ))}
+            </ul>
+          )}
         </CardContent>
       </Card>
 
